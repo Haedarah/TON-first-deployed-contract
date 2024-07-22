@@ -15,12 +15,14 @@ import "@ton/test-utils";
 
 describe("main.fc contract tests", () => {
 
-    it("should return the correct most recent msg-sender", async () => {
+    it("should correctly increase the contract counter and return the correct most recent msg-sender", async () => {
        
         const blockchain = await Blockchain.create(); //creating a local instance of a blockchain
         const codeCell = Cell.fromBoc(Buffer.from(hex, "hex"))[0]; //restoring the hex of a cell into a real workwith-able cell
 
-        const myContract = blockchain.openContract(await MainContract.createFromConfig({}, codeCell)); //deploying our contract on the local blockchain we just spinned
+        const initAddress = await blockchain.treasury("initWallet") ;
+
+        const myContract = blockchain.openContract(MainContract.createFromConfig({number: 0, address: initAddress.address}, codeCell)); //deploying our contract on the local blockchain we just spinned
 
         //creating two different users to help in testing
         //blockchain.treasury(string: seed phrase) creates a wallet address depending on the string that you pass to it.
@@ -28,10 +30,17 @@ describe("main.fc contract tests", () => {
         const senderWallet1 = await blockchain.treasury("sender1");
         const senderWallet2 = await blockchain.treasury("sender2");
 
+    //////After the above deployment, the contract is still not active. The three below commented lines won't work because it is an attempt to run a get method
+    ////// on a non-active contract.    
+        // const data0 = await myContract.getData();
+        // expect(data0.recent_sender.toString()).toBe(initAddress.address.toString());
+        // expect(data0.number).toEqual(0);
+
         //a message sent from user1 to the contract:
-        const sentMessageResult1 = await myContract.sendInternalMessage(
+        const sentMessageResult1 = await myContract.sendIncrement(
             senderWallet1.getSender(),
-            toNano("0.05")
+            toNano("0.05"),
+            1
         );
         
         //making sure that the message has been sent as intended
@@ -46,11 +55,13 @@ describe("main.fc contract tests", () => {
 
         //check whether the contract is behaving as intended or not.
         expect(data1.recent_sender.toString()).toBe(senderWallet1.address.toString());
+        expect(data1.number).toEqual(1);
       
         //a message sent from user2 to the contract:
-        const sentMessageResult2 = await myContract.sendInternalMessage(
+        const sentMessageResult2 = await myContract.sendIncrement(
             senderWallet2.getSender(),
-            toNano("0.05")
+            toNano("0.05"),
+            1
         );
         
         expect(sentMessageResult2.transactions).toHaveTransaction({
@@ -62,5 +73,6 @@ describe("main.fc contract tests", () => {
         const data2 = await myContract.getData();
 
         expect(data2.recent_sender.toString()).toBe(senderWallet2.address.toString());
+        expect(data2.number).toEqual(2);
     });
   });

@@ -14,10 +14,22 @@
     int flags = cs~load_uint(4) ; ;; reading the first 4 bits, as an integer. the first 4 bits are the flags that the sender used when they sent a message to the contract.
     slice sender_address = cs~load_msg_addr(); ;; the poniter has moved. Now we are reading the address that sent of this message
 
-    set_data(begin_cell().store_slice(sender_address).end_cell());
+    int op = in_msg_body~load_uint(32); ;; from the msg body (which is a part of the in_msg cell), we read the op-code that is sent with the message we are expecting
+
+    if (op == 1) {
+        int increment_by = in_msg_body~load_uint(32);
+        slice ds = get_data().begin_parse(); ;; beginning to parse our contract's c4 storage
+        int counter_value = ds~load_uint(32); ;; reading the stored counter_value from our contract's storage
+        ;; creating a new cell that contains the new counter_value and sender address, and replacing the previous stored cell with it:
+        set_data(begin_cell().store_uint(counter_value + increment_by, 32).store_slice(sender_address).end_cell());
+        return ();
+    }
 }
 
-slice get__latest_sender() method_id {
-    slice ds = get_data().begin_parse();
-    return ds~load_msg_addr();
+(int, slice) get_contract_storage_data() method_id {
+  slice ds = get_data().begin_parse();
+  return (
+    ds~load_uint(32), ;; counter_value
+    ds~load_msg_addr() ;; the most recent sender
+  );
 }
