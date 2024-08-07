@@ -1,19 +1,22 @@
 import { Address, beginCell, Cell, Contract, contractAddress, ContractProvider, Sender, SendMode } from "@ton/core";
 
-export type MainContractConfig = { number: number; address: Address; }
+// In the main Contract config, we define all the storage units in the contract. In this contract so far, we are storing:
+// 1. A number (the counter)
+// 2. An address (the most recent sender address)
+// 3. An address (the contract owner address) 
+export type MainContractConfig = { number: number; address: Address; owner_address: Address; };
 
-export function mainContractConfigToCell(config: MainContractConfig): Cell { return beginCell().storeUint(config.number, 32).storeAddress(config.address).endCell(); }
+export function mainContractConfigToCell(config: MainContractConfig): Cell {
+    return beginCell()
+    .storeUint(config.number, 32)
+    .storeAddress(config.address)
+    .storeAddress(config.owner_address)
+    .endCell();
+}
 
 export class MainContract implements Contract {
-    //MainContract class is implementing Contract interface.
-    //A contract interface on TON has 3 values:
-    // 1. address: the address of the smart contract.
-    // 2. init: the initial data of the contract. This includes its FunC code, along with what's going to be in the storgae part of the contract, once it is deployed. (mandatory)
-    //          This part of the contract decides its address. An address on TON is deterministic. We can figure out the address of a contract even before it is deployed. (optional)
-    // 3. abi: the contract code ABI. (optional)
-    //In this interface we are building, we care about the address of the contract and the init code & data.
-    constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {}
 
+    constructor(readonly address: Address, readonly init?: { code: Cell; data: Cell }) {}
 
     static createFromConfig(config: MainContractConfig, code: Cell, workchain = 0) {
         const data = mainContractConfigToCell(config);
@@ -23,11 +26,21 @@ export class MainContract implements Contract {
         return new MainContract(address, init);
     }
 
-    async sendIncrement(provider: ContractProvider, sender: Sender, value: bigint, increment_by: number) {
-        
+    async sendIncrement(provider: ContractProvider, sender: Sender, value: bigint) {
         const msg_body = beginCell()
-          .storeUint(1, 32) // OP code
-          .storeUint(increment_by, 32) // increment_by value
+        .storeUint(1, 32) // OP code
+        .endCell();
+
+        await provider.internal(sender, {
+            value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: msg_body,
+        });
+    }
+
+    async sendDeposit(provider: ContractProvider, sender: Sender, value: bigint) {
+        const msg_body = beginCell()
+          .storeUint(2, 32) // OP code
           .endCell();
     
         await provider.internal(sender, {
@@ -35,19 +48,48 @@ export class MainContract implements Contract {
           sendMode: SendMode.PAY_GAS_SEPARATELY,
           body: msg_body,
         });
-      }
+    }
 
-      async getData(provider: ContractProvider) {
+    async sendDepositeNoCode(provider: ContractProvider, sender: Sender, value: bigint) {
+        const msg_body = beginCell().endCell();
+    
+        await provider.internal(sender, {
+          value,
+          sendMode: SendMode.PAY_GAS_SEPARATELY,
+          body: msg_body,
+        });
+    } 
+
+    async sendWithdrawalRequest(provider: ContractProvider, sender: Sender, value: bigint, amount: bigint) {
+        const msg_body = beginCell()
+        .storeUint(3, 32) // OP code
+        .storeCoins(amount)
+        .endCell();
+    
+        await provider.internal(sender, {
+          value,
+          sendMode: SendMode.PAY_GAS_SEPARATELY,
+          body: msg_body,
+        });
+    } 
+
+
+
+
+
+    async getData(provider: ContractProvider) {
         const { stack } = await provider.get("get_contract_storage_data", []);
         return {
-          number: stack.readNumber(),
-          recent_sender: stack.readAddress(),
+            number: stack.readNumber(),
+            recent_sender: stack.readAddress(),
+            owner_address: stack.readAddress(), 
         };
-      }
+    }
+
+    async getBalance(provider: ContractProvider) {
+        const { stack } = await provider.get("balance", []);
+        return {
+            balance: stack.readNumber(),
+        };
+    }
 }
-
-/////////////////////////////////////////////((EXPLANATION))////////////////////////////////////////////
-
-// In this code, we are basically creating an *interface* for our smart contract.
-// It *wraps* our FunC smart contract and makes it easier to interact with in the test script.
-// In this example, "MainContract.ts" is a wrapper of "main.fc" contract.
